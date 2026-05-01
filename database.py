@@ -584,3 +584,90 @@ async def delete_session_cache_state(session_id: str):
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM session_cache_state WHERE session_id = $1", session_id)
+
+
+async def export_all_conversations():
+    """导出所有对话记录（用于备份）"""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT session_id, role, content, model, created_at
+            FROM conversations
+            ORDER BY session_id, created_at
+        """)
+        return [
+            {
+                'session_id': r['session_id'],
+                'role': r['role'],
+                'content': r['content'],
+                'model': r['model'] or '',
+                'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+            }
+            for r in rows
+        ]
+
+
+async def import_conversations(records: list):
+    """
+    导入对话记录（自动去重）
+    
+    records: [{ session_id, role, content, model?, created_at? }, ...]
+    按 session_id + role + created_at 三元组去重，已存在的跳过。
+    返回 (导入数量, 跳过数量)
+    """
+    if not records:
+        return 0, 0
+    
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        imported = 0
+        skipped = 0
+        for r in records:
+            session_id = r.get('session_id')
+            role = r.get('role')
+            content = r.get('content')
+            
+            if not all([session_id, role, content]):
+                continue
+            
+            model = r.get('model', '')
+            created_at = r.get('created_at')
+            
+            # 解析时间
+            from datetime import datetime
+            if created_at and isinstance(created_at, str):
+                try:
+                    created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                except:
+                    created_at = None
+            
+            # 去重检查
+            if created_at:
+                existing = await conn.fetchrow("""
+                    SELECT id FROM conversations
+                    WHERE session_id = $1 AND role = $2 AND created_at = $3
+                    LIMIT 1
+                """, session_id, role, created_at)
+                
+                if existing:
+                    skipped += 1
+                    continue
+                
+                await conn.execute("""
+                    INSERT INTO conversations (session_id, role, content, model, created_at)
+                    VALUES ($1, $2, $3, $4, $5)
+                """, session_id, role, content, model, created_at)
+            else:
+                await conn.execute("""
+                    INSERT INTO conversations (session_id, role, content, model)
+                    VALUES ($1, $2, $3, $4)
+                """, session_id, role, content, model)
+            
+            imported += 1
+        
+        if skipped:
+            print(f"📥 导入对话: {imported} 条新增, {skipped} 条已存在跳过")
+        else:
+            print(f"📥 导入对话: {imported} 条新增")
+        
+        return imported, skipped
