@@ -1175,6 +1175,7 @@ def db_row_to_message(row: dict) -> dict:
     普通消息: {"role": "user", "content": "你好"} 
     工具调用: {"role": "assistant", "content": null, "tool_calls": [...]}
     工具结果: {"role": "tool", "content": "结果", "tool_call_id": "call_xxx"}
+    思维链:   {"role": "assistant", "content": "回答", "reasoning_content": "思维链"}
     """
     import json as _json
     msg = {"role": row["role"], "content": row.get("content") or ""}
@@ -1188,6 +1189,9 @@ def db_row_to_message(row: dict) -> dict:
                 msg["tool_calls"] = meta["tool_calls"]
                 if not row.get("content"):
                     msg["content"] = None
+            # assistant 带 reasoning_content（deepseek thinking mode）
+            if "reasoning_content" in meta:
+                msg["reasoning_content"] = meta["reasoning_content"]
             # tool 消息带 tool_call_id
             if "tool_call_id" in meta:
                 msg["tool_call_id"] = meta["tool_call_id"]

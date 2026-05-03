@@ -516,7 +516,7 @@ async def build_memory_text(user_message: str) -> str:
 # 后台记忆处理
 # ============================================================
 
-async def process_memories_background(session_id: str, user_msg: str, assistant_msg: str, model: str, context_messages: list = None, skip_conversation_log: bool = False, tool_messages: list = None, assistant_tool_calls: list = None):
+async def process_memories_background(session_id: str, user_msg: str, assistant_msg: str, model: str, context_messages: list = None, skip_conversation_log: bool = False, tool_messages: list = None, assistant_tool_calls: list = None, assistant_reasoning: str = None):
     """
     后台异步：存储对话 + 提取记忆（不阻塞主流程）
     
@@ -531,6 +531,7 @@ async def process_memories_background(session_id: str, user_msg: str, assistant_
     skip_conversation_log: 跳过对话存储（标题生成等辅助请求时使用）
     tool_messages: 客户端发来的工具结果消息列表
     assistant_tool_calls: response中assistant的工具调用列表（如果有）
+    assistant_reasoning: response中assistant的reasoning_content（deepseek thinking mode）
     """
     global _round_counter
     
@@ -556,18 +557,28 @@ async def process_memories_background(session_id: str, user_msg: str, assistant_
                 await save_message(session_id, "tool", tm.get("content", ""), model, metadata=meta)
             
             if assistant_msg or assistant_tool_calls:
-                ast_meta = json.dumps({"tool_calls": assistant_tool_calls}) if assistant_tool_calls else None
+                ast_meta_dict = {}
+                if assistant_tool_calls:
+                    ast_meta_dict["tool_calls"] = assistant_tool_calls
+                if assistant_reasoning:
+                    ast_meta_dict["reasoning_content"] = assistant_reasoning
+                ast_meta = json.dumps(ast_meta_dict) if ast_meta_dict else None
                 await save_message(session_id, "assistant", assistant_msg or "", model, metadata=ast_meta)
-                print(f"🔧 存储: {len(tool_messages)}条tool + 1条assistant" + (" (含tool_calls)" if assistant_tool_calls else ""))
+                print(f"🔧 存储: {len(tool_messages)}条tool + 1条assistant" + (" (含tool_calls)" if assistant_tool_calls else "") + (" (含reasoning)" if assistant_reasoning else ""))
         else:
             # 普通对话或首次工具调用
-            assistant_meta = json.dumps({"tool_calls": assistant_tool_calls}) if assistant_tool_calls else None
+            ast_meta_dict = {}
+            if assistant_tool_calls:
+                ast_meta_dict["tool_calls"] = assistant_tool_calls
+            if assistant_reasoning:
+                ast_meta_dict["reasoning_content"] = assistant_reasoning
+            assistant_meta = json.dumps(ast_meta_dict) if ast_meta_dict else None
             
             if assistant_tool_calls:
                 # 首次工具调用：assistant回复包含tool_calls，存user + assistant(tool_calls)
                 await save_message(session_id, "user", user_msg, model)
                 await save_message(session_id, "assistant", assistant_msg or "", model, metadata=assistant_meta)
-                print(f"🔧 存储: user + assistant (含{len(assistant_tool_calls)}个tool_calls)")
+                print(f"🔧 存储: user + assistant (含{len(assistant_tool_calls)}个tool_calls)" + (" (含reasoning)" if assistant_reasoning else ""))
             else:
                 # 纯文字对话：re-roll检测 + 存user + assistant
                 last_user = await get_last_user_content(session_id)
@@ -577,10 +588,10 @@ async def process_memories_background(session_id: str, user_msg: str, assistant_
                         print(f"🔄 检测到re-roll，已覆盖最后一条assistant回复")
                     else:
                         await save_message(session_id, "user", user_msg, model)
-                        await save_message(session_id, "assistant", assistant_msg, model)
+                        await save_message(session_id, "assistant", assistant_msg, model, metadata=assistant_meta)
                 else:
                     await save_message(session_id, "user", user_msg, model)
-                    await save_message(session_id, "assistant", assistant_msg, model)
+                    await save_message(session_id, "assistant", assistant_msg, model, metadata=assistant_meta)
         
         # 2. 检查是否需要提取记忆
         if not MEMORY_EXTRACT_ENABLED:
@@ -900,12 +911,16 @@ async def chat_completions(request: Request):
                 resp_data = response.json()
                 assistant_msg = ""
                 assistant_tool_calls = None
+                assistant_reasoning = None
                 try:
                     msg_obj = resp_data["choices"][0]["message"]
                     assistant_msg = msg_obj.get("content") or ""
                     if msg_obj.get("tool_calls"):
                         assistant_tool_calls = msg_obj["tool_calls"]
                         print(f"🔧 Response 包含 {len(assistant_tool_calls)} 个工具调用")
+                    if msg_obj.get("reasoning_content"):
+                        assistant_reasoning = msg_obj["reasoning_content"]
+                        print(f"🧠 Response 包含 reasoning_content ({len(assistant_reasoning)}字符)")
                 except (KeyError, IndexError):
                     pass
                 
@@ -913,7 +928,8 @@ async def chat_completions(request: Request):
                     asyncio.create_task(
                         process_memories_background(session_id, user_message, assistant_msg, model, 
                                                     context_messages=original_messages, skip_conversation_log=skip_conversation_log,
-                                                    tool_messages=tool_messages, assistant_tool_calls=assistant_tool_calls)
+                                                    tool_messages=tool_messages, assistant_tool_calls=assistant_tool_calls,
+                                                    assistant_reasoning=assistant_reasoning)
                     )
                 
                 return JSONResponse(status_code=200, content=resp_data)
@@ -924,6 +940,7 @@ async def chat_completions(request: Request):
 async def stream_and_capture(headers: dict, body: dict, session_id: str, user_message: str, model: str, original_messages: list = None, skip_conversation_log: bool = False, tool_messages: list = None):
     """流式响应 + 捕获完整回复（原始字节透传，确保SSE格式和thinking数据完整）"""
     full_response = []
+    full_reasoning = []
     stream_usage = {}
     line_buffer = ""
     accumulated_tool_calls = {}  # index -> {id, type, function: {name, arguments}}
@@ -934,9 +951,21 @@ async def stream_and_capture(headers: dict, body: dict, session_id: str, user_me
             upstream_ct = response.headers.get("content-type", "")
             print(f"📨 上游响应: status={response.status_code}, content-type={upstream_ct}", flush=True)
             
+            # 上游非200时，提前打印messages结构方便debug
+            if response.status_code != 200:
+                msg_summary = [{"role": m.get("role"), "tool_calls": bool(m.get("tool_calls")), "tool_call_id": m.get("tool_call_id", ""), "content_type": type(m.get("content")).__name__} for m in body.get("messages", [])]
+                print(f"❌ 发送的messages结构({len(msg_summary)}条): {msg_summary}", flush=True)
+            
+            error_body_parts = []
+            is_error = response.status_code != 200
+            
             async for chunk in response.aiter_bytes():
                 # 原始字节直接透传给客户端
                 yield chunk
+                
+                if is_error:
+                    error_body_parts.append(chunk)
+                    continue
                 
                 # 旁路解析：从字节流中提取assistant回复内容，用于后续记忆提取
                 text = chunk.decode("utf-8", errors="ignore")
@@ -955,6 +984,11 @@ async def stream_and_capture(headers: dict, body: dict, session_id: str, user_me
                             content = delta.get("content", "")
                             if content:
                                 full_response.append(content)
+                            
+                            # 收集reasoning_content（deepseek thinking mode）
+                            reasoning = delta.get("reasoning_content", "")
+                            if reasoning:
+                                full_reasoning.append(reasoning)
                             
                             # 累积tool_calls
                             if "tool_calls" in delta:
@@ -979,7 +1013,16 @@ async def stream_and_capture(headers: dict, body: dict, session_id: str, user_me
                             pass
     
     assistant_msg = "".join(full_response)
+    assistant_reasoning = "".join(full_reasoning) if full_reasoning else None
     assistant_tool_calls = list(accumulated_tool_calls.values()) if accumulated_tool_calls else None
+    
+    if assistant_reasoning:
+        print(f"🧠 Stream response 包含 reasoning_content ({len(assistant_reasoning)}字符)")
+    
+    # 打印上游错误内容
+    if error_body_parts:
+        error_text = b"".join(error_body_parts).decode("utf-8", errors="ignore")[:500]
+        print(f"❌ 上游错误内容: {error_text}", flush=True)
     
     if assistant_tool_calls:
         print(f"🔧 Stream response 包含 {len(assistant_tool_calls)} 个工具调用")
@@ -996,7 +1039,8 @@ async def stream_and_capture(headers: dict, body: dict, session_id: str, user_me
         asyncio.create_task(
             process_memories_background(session_id, user_message, assistant_msg, model, 
                                         context_messages=original_messages, skip_conversation_log=skip_conversation_log,
-                                        tool_messages=tool_messages, assistant_tool_calls=assistant_tool_calls)
+                                        tool_messages=tool_messages, assistant_tool_calls=assistant_tool_calls,
+                                        assistant_reasoning=assistant_reasoning)
         )
 
 
