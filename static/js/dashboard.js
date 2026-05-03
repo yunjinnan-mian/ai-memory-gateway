@@ -627,7 +627,7 @@ async function doConvImport() {
         resultEl.innerHTML = `<div class="msg msg-info">导入中... 第 ${i + 1}/${totalBatches} 批（${progress}%）已导入 ${totalImported} 条</div>`;
         
         try {
-            const resp = await fetch('/import/conversations', {
+            const resp = await fetch('/api/conversations/import', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(batch)
