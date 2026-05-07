@@ -1,15 +1,69 @@
 /**
  * AI Memory Gateway - Dashboard JavaScript
  * 整合记忆管理、导入、导出功能
+ * 支持三层记忆架构 v2
  */
+
+// ============================================
+// 内联 SVG 图标（Lucide 风格，24x24 viewBox）
+// ============================================
+const ICONS = (() => {
+    const s = (inner, size = 16) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+    return {
+        brain:      (sz) => s('<path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/>', sz),
+        download:   (sz) => s('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>', sz),
+        upload:     (sz) => s('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>', sz),
+        msgSquare:  (sz) => s('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', sz),
+        link:       (sz) => s('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>', sz),
+        github:     (sz) => s('<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/>', sz),
+        search:     (sz) => s('<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>', sz),
+        sparkles:   (sz) => s('<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>', sz),
+        x:          (sz) => s('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', sz),
+        star:       (sz) => s('<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', sz),
+        calendar:   (sz) => s('<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/>', sz),
+        fileText:   (sz) => s('<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/>', sz),
+        check:      (sz) => s('<polyline points="20 6 9 17 4 12"/>', sz),
+        trash:      (sz) => s('<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>', sz),
+        rotateCcw:  (sz) => s('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>', sz),
+        undo:       (sz) => s('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>', sz),
+        paperclip:  (sz) => s('<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>', sz),
+        gitMerge:   (sz) => s('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>', sz),
+        calculator: (sz) => s('<rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/>', sz),
+        save:       (sz) => s('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>', sz),
+    };
+})();
+
+// ============================================
+// 网关鉴权：从URL参数读取gateway_key，自动注入所有请求
+// ============================================
+const _gatewayKey = new URLSearchParams(window.location.search).get('gateway_key') || '';
+if (_gatewayKey) {
+    const _origFetch = window.fetch;
+    window.fetch = function(url, opts = {}) {
+        opts.headers = opts.headers || {};
+        if (opts.headers instanceof Headers) {
+            opts.headers.set('X-Gateway-Key', _gatewayKey);
+        } else {
+            opts.headers['X-Gateway-Key'] = _gatewayKey;
+        }
+        return _origFetch.call(this, url, opts);
+    };
+}
 
 // ============================================
 // 全局状态
 // ============================================
 let allMemories = [];
 let pendingJsonData = null;
+let currentLayer = 'all';
 let memCurrentPage = 1;
 const MEM_PER_PAGE = 50;
+
+const LAYER_NAMES = {
+    1: '碎片',
+    2: '事件',
+    3: '核心'
+};
 
 // ============================================
 // 初始化
@@ -60,6 +114,9 @@ function switchSection(name) {
     if (name === 'threads') {
         loadThreads();
     }
+    if (name === 'settings') {
+        loadSettings();
+    }
 }
 
 // ============================================
@@ -88,6 +145,27 @@ function initTabs() {
 }
 
 // ============================================
+// 分层 Tab 切换
+// ============================================
+function switchLayer(layer) {
+    currentLayer = layer;
+    memCurrentPage = 1;
+    document.querySelectorAll('.layer-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.layer == layer);
+    });
+    filterAndSort();
+}
+
+function updateLayerCounts(stats) {
+    const el1 = document.getElementById('count-layer-1');
+    const el2 = document.getElementById('count-layer-2');
+    const el3 = document.getElementById('count-layer-3');
+    if (el1) el1.textContent = stats.layer_1?.active || 0;
+    if (el2) el2.textContent = stats.layer_2?.active || 0;
+    if (el3) el3.textContent = stats.layer_3?.active || 0;
+}
+
+// ============================================
 // 记忆管理功能
 // ============================================
 async function loadMemories() {
@@ -95,6 +173,7 @@ async function loadMemories() {
         const resp = await fetch('/api/memories');
         const data = await resp.json();
         allMemories = data.memories || [];
+        if (data.layer_stats) updateLayerCounts(data.layer_stats);
         document.getElementById('stats').textContent = '共 ' + allMemories.length + ' 条记忆';
         filterAndSort();
     } catch(e) {
@@ -105,53 +184,79 @@ async function loadMemories() {
 function renderTable(mems, startIndex) {
     startIndex = startIndex || 0;
     const tbody = document.getElementById('tbody');
-    tbody.innerHTML = mems.map((m, i) => 
-        '<tr data-id="' + m.id + '">' +
-        '<td class="col-check"><input type="checkbox" class="mem-check" value="' + m.id + '"></td>' +
-        '<td class="col-id">' + (startIndex + i + 1) + '</td>' +
-        '<td class="col-content"><textarea class="content-textarea" id="c_' + m.id + '">' + escHtml(m.content) + '</textarea></td>' +
-        '<td class="col-importance"><input type="number" class="importance-input" id="i_' + m.id + '" value="' + m.importance + '" min="1" max="10"></td>' +
-        '<td class="col-source">' + (m.source_session || '-') + '</td>' +
-        '<td class="col-time">' + fmtTime(m.created_at) + '</td>' +
-        '<td class="col-actions"><div class="row-actions">' +
-            '<button class="btn btn-primary btn-sm" onclick="saveMem(' + m.id + ')">保存</button>' +
-            '<button class="btn btn-danger btn-sm" onclick="delMem(' + m.id + ')">删除</button>' +
-        '</div></td>' +
-        '</tr>'
-    ).join('');
+    tbody.innerHTML = mems.map((m, i) => {
+        const layer = m.layer || 1;
+        const isInactive = m.is_active === false;
+        const rowClass = isInactive ? 'inactive-row' : '';
+        const titleDisplay = m.title || '';
+        const mergedFrom = m.merged_from || [];
+        
+        // 层级下拉选择器
+        const layerSelect = '<select class="layer-select" id="l_' + m.id + '" onchange="changeLayer(' + m.id + ')">' +
+            '<option value="1"' + (layer === 1 ? ' selected' : '') + '>碎片</option>' +
+            '<option value="2"' + (layer === 2 ? ' selected' : '') + '>事件</option>' +
+            '<option value="3"' + (layer === 3 ? ' selected' : '') + '>核心</option>' +
+            '</select>';
+        
+        // 合并来源提示
+        let mergeInfo = '';
+        if (mergedFrom.length > 0) {
+            mergeInfo = '<div class="merge-info" onclick="showMergeSource(' + m.id + ')">' +
+                ICONS.paperclip(12) + ' 由 ' + mergedFrom.length + ' 条合并</div>';
+        }
+        
+        // 撤回按钮（只有事件记忆且有合并来源时显示）
+        let revertBtn = '';
+        if (layer === 2 && mergedFrom.length > 0) {
+            revertBtn = '<button class="btn btn-warning btn-sm" onclick="revertMerge(' + m.id + ')">撤回</button>';
+        }
+        
+        // 恢复按钮（只有已归档的记忆显示）
+        let restoreBtn = '';
+        let deleteBtn = '<button class="btn btn-danger btn-sm" onclick="delMem(' + m.id + ')">删除</button>';
+        if (isInactive) {
+            restoreBtn = '<button class="btn btn-success btn-sm" onclick="restoreMem(' + m.id + ')">恢复</button>';
+            deleteBtn = '<button class="btn btn-danger btn-sm" onclick="delMem(' + m.id + ', true)">永久删除</button>';
+        }
+        
+        return '<tr data-id="' + m.id + '" class="' + rowClass + '">' +
+            '<td class="col-check"><input type="checkbox" class="mem-check" value="' + m.id + '" onchange="updateFloatingBar()"></td>' +
+            '<td class="col-id">' + (startIndex + i + 1) + mergeInfo + '</td>' +
+            '<td class="col-layer">' + layerSelect + '</td>' +
+            '<td class="col-title"><input type="text" class="title-input" id="t_' + m.id + '" value="' + escHtml(titleDisplay) + '" placeholder="无标题"></td>' +
+            '<td class="col-content"><textarea class="content-textarea" id="c_' + m.id + '">' + escHtml(m.content) + '</textarea></td>' +
+            '<td class="col-importance"><input type="number" class="importance-input" id="i_' + m.id + '" value="' + m.importance + '" min="1" max="10"></td>' +
+            '<td class="col-time">' + fmtTime(m.created_at) + '</td>' +
+            '<td class="col-actions"><div class="row-actions">' +
+                '<button class="btn btn-primary btn-sm" onclick="saveMem(' + m.id + ')">保存</button>' +
+                revertBtn +
+                restoreBtn +
+                deleteBtn +
+            '</div></td>' +
+            '</tr>';
+    }).join('');
 }
 
 function escHtml(s) {
-    return s
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    if (!s) return '';
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function fmtTime(s) {
-    if (!s) return '-';
-    return s;
-}
+function fmtTime(s) { return s || '-'; }
 
 function filterAndSort() {
     const q = document.getElementById('searchBox').value.trim().toLowerCase();
     const sort = document.getElementById('sortSelect').value;
     const dateVal = document.getElementById('dateFilter').value;
+    const showInactiveEl = document.getElementById('showInactive');
+    const showInactive = showInactiveEl ? showInactiveEl.checked : false;
     
     let mems = allMemories;
+    if (currentLayer !== 'all') mems = mems.filter(m => (m.layer || 1) == currentLayer);
+    if (!showInactive) mems = mems.filter(m => m.is_active !== false);
+    if (q) mems = mems.filter(m => m.content.toLowerCase().includes(q) || (m.title && m.title.toLowerCase().includes(q)));
+    if (dateVal) mems = mems.filter(m => m.created_at && fmtTime(m.created_at).slice(0, 10) === dateVal);
     
-    // 关键词筛选
-    if (q) {
-        mems = mems.filter(m => m.content.toLowerCase().includes(q));
-    }
-    
-    // 日期筛选
-    if (dateVal) {
-        mems = mems.filter(m => m.created_at && fmtTime(m.created_at).slice(0, 10) === dateVal);
-    }
-    
-    // 排序
     mems = [...mems].sort((a, b) => {
         if (sort === 'id-desc') return b.id - a.id;
         if (sort === 'id-asc') return a.id - b.id;
@@ -170,13 +275,13 @@ function filterAndSort() {
     renderTable(pageMems, start);
     renderMemPagination(totalItems, totalPages);
     
-    // 更新统计
     const parts = [];
-    if (q || dateVal) {
-        parts.push('筛选到 ' + totalItems + ' / ' + allMemories.length + ' 条');
+    if (q || dateVal || currentLayer !== 'all') {
+        parts.push('筛选到 ' + totalItems + ' 条');
+        if (currentLayer !== 'all') parts.push('层级: ' + LAYER_NAMES[currentLayer]);
         if (dateVal) parts.push('日期: ' + dateVal);
     } else {
-        parts.push('共 ' + allMemories.length + ' 条记忆');
+        parts.push('共 ' + allMemories.filter(m => m.is_active !== false).length + ' 条活跃记忆');
     }
     if (totalPages > 1) {
         parts.push(`第 ${memCurrentPage}/${totalPages} 页`);
@@ -277,15 +382,44 @@ function exitSemanticSearch() {
     filterAndSort();
 }
 
-async function saveMem(id) {
-    const content = document.getElementById('c_' + id).value;
-    const importance = parseInt(document.getElementById('i_' + id).value);
+async function changeLayer(id) {
+    const layerEl = document.getElementById('l_' + id);
+    const newLayer = parseInt(layerEl.value);
     
     try {
         const resp = await fetch('/api/memories/' + id, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({content, importance})
+            body: JSON.stringify({layer: newLayer})
+        });
+        const data = await resp.json();
+        if (data.error) {
+            showManageMsg('error', '❌ ' + data.error);
+            loadMemories();
+        } else {
+            showManageMsg('success', '✅ #' + id + ' 层级已改为 ' + LAYER_NAMES[newLayer]);
+            const mem = allMemories.find(m => m.id === id);
+            if (mem) mem.layer = newLayer;
+            loadMemories();
+        }
+    } catch(e) {
+        showManageMsg('error', '❌ ' + e.message);
+    }
+}
+
+async function saveMem(id) {
+    const content = document.getElementById('c_' + id).value;
+    const importance = parseInt(document.getElementById('i_' + id).value);
+    const titleEl = document.getElementById('t_' + id);
+    const layerEl = document.getElementById('l_' + id);
+    const title = titleEl ? titleEl.value : null;
+    const layer = layerEl ? parseInt(layerEl.value) : null;
+    
+    try {
+        const resp = await fetch('/api/memories/' + id, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({content, importance, title, layer})
         });
         const data = await resp.json();
         if (data.error) {
@@ -299,16 +433,35 @@ async function saveMem(id) {
     }
 }
 
-async function delMem(id) {
-    if (!confirm('确定删除 #' + id + '？此操作不可撤销。')) return;
-    
+async function delMem(id, hard = false) {
+    const confirmMsg = hard 
+        ? '确定永久删除 #' + id + '？此操作不可撤销！'
+        : '确定删除 #' + id + '？（软删除，可恢复）';
+    if (!confirm(confirmMsg)) return;
     try {
-        const resp = await fetch('/api/memories/' + id, { method: 'DELETE' });
+        const soft = !hard;
+        const resp = await fetch('/api/memories/' + id + '?soft=' + soft, { method: 'DELETE' });
         const data = await resp.json();
         if (data.error) {
             showManageMsg('error', '❌ ' + data.error);
         } else {
-            showManageMsg('success', '✅ 已删除 #' + id);
+            const action = hard ? '永久删除' : '已归档';
+            showManageMsg('success', '✅ ' + action + ' #' + id);
+            loadMemories();
+        }
+    } catch(e) {
+        showManageMsg('error', '❌ ' + e.message);
+    }
+}
+
+async function restoreMem(id) {
+    try {
+        const resp = await fetch('/api/memories/' + id + '/restore', { method: 'POST' });
+        const data = await resp.json();
+        if (data.error) {
+            showManageMsg('error', '❌ ' + data.error);
+        } else {
+            showManageMsg('success', '✅ 已恢复 #' + id);
             loadMemories();
         }
     } catch(e) {
@@ -318,27 +471,27 @@ async function delMem(id) {
 
 async function batchSave() {
     const rows = document.querySelectorAll('#tbody tr');
-    if (rows.length === 0) {
-        showManageMsg('error', '没有记忆可保存');
-        return;
-    }
+    if (rows.length === 0) { showManageMsg('error', '没有记忆可保存'); return; }
     
     const updates = [];
     rows.forEach(row => {
         const id = parseInt(row.dataset.id);
         const cEl = document.getElementById('c_' + id);
         const iEl = document.getElementById('i_' + id);
+        const tEl = document.getElementById('t_' + id);
+        const lEl = document.getElementById('l_' + id);
         if (cEl && iEl) {
             updates.push({
                 id,
                 content: cEl.value,
-                importance: parseInt(iEl.value)
+                importance: parseInt(iEl.value),
+                title: tEl ? tEl.value : null,
+                layer: lEl ? parseInt(lEl.value) : null
             });
         }
     });
     
     if (!confirm('确定保存全部 ' + updates.length + ' 条记忆的修改？')) return;
-    
     try {
         const resp = await fetch('/api/memories/batch-update', {
             method: 'POST',
@@ -359,14 +512,8 @@ async function batchSave() {
 
 async function batchDelete() {
     const checked = [...document.querySelectorAll('.mem-check:checked')].map(c => parseInt(c.value));
-    
-    if (checked.length === 0) {
-        showManageMsg('error', '请先勾选要删除的记忆');
-        return;
-    }
-    
+    if (checked.length === 0) { showManageMsg('error', '请先勾选要删除的记忆'); return; }
     if (!confirm('确定删除选中的 ' + checked.length + ' 条记忆？此操作不可撤销。')) return;
-    
     try {
         const resp = await fetch('/api/memories/batch-delete', {
             method: 'POST',
@@ -390,6 +537,28 @@ function toggleAll() {
     document.querySelectorAll('.mem-check').forEach(c => c.checked = val);
     document.getElementById('selectAll').checked = val;
     document.getElementById('selectAllHead').checked = val;
+    updateFloatingBar();
+}
+
+// 监听勾选变化，更新浮动操作栏
+function updateFloatingBar() {
+    const checked = document.querySelectorAll('.mem-check:checked').length;
+    const floatingBar = document.getElementById('floatingBar');
+    const countEl = document.getElementById('selectedCount');
+    
+    if (checked > 0) {
+        countEl.textContent = checked;
+        floatingBar.style.display = 'flex';
+    } else {
+        floatingBar.style.display = 'none';
+    }
+}
+
+function clearSelection() {
+    document.querySelectorAll('.mem-check').forEach(c => c.checked = false);
+    document.getElementById('selectAll').checked = false;
+    document.getElementById('selectAllHead').checked = false;
+    updateFloatingBar();
 }
 
 function showManageMsg(type, text) {
@@ -398,6 +567,230 @@ function showManageMsg(type, text) {
     setTimeout(() => {
         container.innerHTML = '';
     }, 4000);
+}
+
+// ============================================
+// 查看合并来源
+// ============================================
+async function showMergeSource(id) {
+    const mem = allMemories.find(m => m.id === id);
+    if (!mem || !mem.merged_from || mem.merged_from.length === 0) {
+        showManageMsg('error', '没有合并来源信息');
+        return;
+    }
+    
+    try {
+        const resp = await fetch('/api/memories?active_only=false');
+        const data = await resp.json();
+        const allMems = data.memories || [];
+        
+        const sources = mem.merged_from.map(srcId => {
+            const srcMem = allMems.find(m => m.id === srcId);
+            return srcMem ? { id: srcId, content: srcMem.content } : { id: srcId, content: '(已删除)' };
+        });
+        
+        let html = '<h3>合并来源 - 事件 #' + id + '</h3>';
+        html += '<p style="color:var(--text-light);margin-bottom:16px;">以下 ' + sources.length + ' 条碎片被合并成了这条事件记忆：</p>';
+        sources.forEach((src, i) => {
+            html += '<div class="source-item"><b>#' + src.id + '</b><br>' + escHtml(src.content) + '</div>';
+        });
+        html += '<div class="modal-actions"><button class="btn btn-secondary" onclick="closeMergeSourceModal()">关闭</button></div>';
+        
+        document.getElementById('mergeSourceContent').innerHTML = html;
+        document.getElementById('mergeSourceModal').style.display = 'flex';
+    } catch(e) {
+        showManageMsg('error', '❌ ' + e.message);
+    }
+}
+
+function closeMergeSourceModal() {
+    document.getElementById('mergeSourceModal').style.display = 'none';
+}
+
+// ============================================
+// 撤回合并
+// ============================================
+async function revertMerge(id) {
+    const mem = allMemories.find(m => m.id === id);
+    if (!mem || !mem.merged_from || mem.merged_from.length === 0) {
+        showManageMsg('error', '没有合并来源，无法撤回');
+        return;
+    }
+    
+    if (!confirm('确定撤回合并？\n\n将恢复 ' + mem.merged_from.length + ' 条原始碎片，并删除当前事件记忆 #' + id)) {
+        return;
+    }
+    
+    try {
+        const resp = await fetch('/api/memories/' + id + '/revert-merge', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+        const data = await resp.json();
+        if (data.error) {
+            showManageMsg('error', '❌ ' + data.error);
+        } else {
+            showManageMsg('success', '✅ 已撤回合并，恢复了 ' + data.restored + ' 条碎片');
+            loadMemories();
+        }
+    } catch(e) {
+        showManageMsg('error', '❌ ' + e.message);
+    }
+}
+
+// ============================================
+// 合并弹窗
+// ============================================
+function openMergeModal() {
+    const checked = [...document.querySelectorAll('.mem-check:checked')].map(c => parseInt(c.value));
+    if (checked.length < 2) {
+        showManageMsg('error', '请至少选择 2 条记忆进行合并');
+        return;
+    }
+    
+    const selectedContents = checked.map(id => {
+        const mem = allMemories.find(m => m.id === id);
+        return mem ? mem.content : '';
+    }).join('\n\n---\n\n');
+    
+    document.getElementById('mergeCount').textContent = checked.length;
+    document.getElementById('mergeContent').value = selectedContents;
+    document.getElementById('mergeContent').placeholder = '请编辑合并后的完整描述...';
+    document.getElementById('mergeTitle').value = '';
+    document.getElementById('mergeImportance').value = '5';
+    document.getElementById('mergeLayer').value = '2';
+    document.getElementById('mergeModal').style.display = 'flex';
+}
+
+function closeMergeModal() {
+    document.getElementById('mergeModal').style.display = 'none';
+}
+
+async function doMerge() {
+    const checked = [...document.querySelectorAll('.mem-check:checked')].map(c => parseInt(c.value));
+    const title = document.getElementById('mergeTitle').value.trim();
+    const content = document.getElementById('mergeContent').value.trim();
+    const importance = parseInt(document.getElementById('mergeImportance').value);
+    const layer = parseInt(document.getElementById('mergeLayer').value);
+    
+    if (!content) { showManageMsg('error', '请输入合并后的内容'); return; }
+    try {
+        const resp = await fetch('/api/memories/merge', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ ids: checked, title, content, importance, layer })
+        });
+        const data = await resp.json();
+        if (data.error) {
+            showManageMsg('error', '❌ ' + data.error);
+        } else {
+            showManageMsg('success', '✅ 已合并 ' + data.merged + ' 条为新记忆 #' + data.new_id);
+            closeMergeModal();
+            loadMemories();
+        }
+    } catch(e) {
+        showManageMsg('error', '❌ ' + e.message);
+    }
+}
+
+// ============================================
+// 整理弹窗
+// ============================================
+function openConsolidateModal() {
+    document.getElementById('consolidateModal').style.display = 'flex';
+}
+
+function closeConsolidateModal() {
+    document.getElementById('consolidateModal').style.display = 'none';
+}
+
+async function doConsolidate() {
+    const startDate = document.getElementById('consolidateDateStart').value;
+    const endDate = document.getElementById('consolidateDateEnd').value;
+    
+    if (!startDate || !endDate) { 
+        showManageMsg('error', '请选择开始和结束日期'); 
+        return; 
+    }
+    if (startDate > endDate) {
+        showManageMsg('error', '开始日期不能晚于结束日期');
+        return;
+    }
+    
+    showManageMsg('info', '正在提交整理任务...');
+    closeConsolidateModal();
+    try {
+        const resp = await fetch('/api/memories/consolidate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({start_date: startDate, end_date: endDate})
+        });
+        const data = await resp.json();
+        if (data.error) {
+            showManageMsg('error', '❌ ' + data.error);
+            return;
+        }
+        if (data.status === 'already_running') {
+            showManageMsg('info', '⏳ 整理任务正在运行中...');
+        } else {
+            showManageMsg('info', '⏳ 整理任务已启动，后台处理中...');
+        }
+        // 轮询状态
+        const pollInterval = setInterval(async () => {
+            try {
+                const statusResp = await fetch('/api/memories/consolidate/status');
+                const status = await statusResp.json();
+                if (status.running) {
+                    showManageMsg('info', '⏳ 整理进行中（' + (status.started_at || '') + '）...');
+                } else {
+                    clearInterval(pollInterval);
+                    if (status.error) {
+                        showManageMsg('error', '❌ 整理失败: ' + status.error);
+                    } else if (status.result) {
+                        const r = status.result;
+                        if (r.status === 'no_fragments') {
+                            showManageMsg('info', '📝 该时间段没有需要整理的碎片记忆');
+                        } else if (r.status === 'ok') {
+                            showManageMsg('success', '✅ 整理完成！处理了 ' + r.fragments_processed + ' 条碎片，生成了 ' + r.events_created + ' 条事件记忆');
+                            loadMemories();
+                        } else if (r.status === 'error') {
+                            showManageMsg('error', '❌ ' + (r.error || '未知错误'));
+                        }
+                    }
+                }
+            } catch(e) {
+                clearInterval(pollInterval);
+                showManageMsg('error', '❌ 状态查询失败: ' + e.message);
+            }
+        }, 3000);
+    } catch(e) {
+        showManageMsg('error', '❌ ' + e.message);
+    }
+}
+
+// ============================================
+// 清理归档碎片
+// ============================================
+async function cleanupOldFragments() {
+    if (!confirm('确定清理30天前的归档碎片？此操作不可撤销。')) return;
+    
+    showManageMsg('info', '正在清理...');
+    try {
+        const resp = await fetch('/api/memories/cleanup-fragments', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({days: 30})
+        });
+        const data = await resp.json();
+        if (data.error) {
+            showManageMsg('error', '❌ ' + data.error);
+        } else {
+            showManageMsg('success', '✅ 已清理 ' + data.deleted + ' 条归档碎片');
+            loadMemories();
+        }
+    } catch(e) {
+        showManageMsg('error', '❌ ' + e.message);
+    }
 }
 
 // ============================================
@@ -738,8 +1131,8 @@ function renderConvList(conversations, isSearch = false) {
         <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; font-size: 13px;">
             <input type="checkbox" id="conv-select-all" onchange="toggleConvSelectAll(this.checked)"> 全选
         </label>
-        <button class="btn btn-sm" onclick="batchDeleteConversations()" id="conv-batch-delete-btn" style="display: none; font-size: 12px;">🗑️ 批量删除</button>
-        <button class="btn btn-sm" onclick="batchMergeSessions()" id="conv-batch-merge-btn" style="display: none; font-size: 12px;">🔗 合并到...</button>
+        <button class="btn btn-sm" onclick="batchDeleteConversations()" id="conv-batch-delete-btn" style="display: none; font-size: 12px;">${ICONS.trash(13)} 批量删除</button>
+        <button class="btn btn-sm" onclick="batchMergeSessions()" id="conv-batch-merge-btn" style="display: none; font-size: 12px;">${ICONS.gitMerge(13)} 合并到...</button>
         <span id="conv-selected-count" style="color: var(--text-muted); font-size: 12px; display: none;"></span>
     </div>`;
     
@@ -769,7 +1162,7 @@ function renderConvList(conversations, isSearch = false) {
                     <div style="text-align: right; flex-shrink: 0; margin-left: 12px;">
                         <div style="color: var(--text-muted); font-size: 12px;">${timeStr}</div>
                         ${msgCount ? `<div style="color: var(--text-muted); font-size: 12px; margin-top: 2px;">${msgCount} 条</div>` : ''}
-                        ${tokenStr ? `<div style="color: var(--text-muted); font-size: 11px; margin-top: 2px;">🪙 ${tokenStr}</div>` : ''}
+                        ${tokenStr ? `<div style="color: var(--text-muted); font-size: 11px; margin-top: 2px;">${tokenStr}</div>` : ''}
                     </div>
                 </div>
             </div>
@@ -849,7 +1242,7 @@ async function loadConvMessages(sessionId, append = false) {
         let html = '';
         if (!append) {
             html += `<div style="margin-bottom: 12px; display: flex; gap: 8px; justify-content: flex-end;">
-                <button class="btn btn-sm" onclick="deleteConversation('${escapeHtml(sessionId)}')">🗑️ 删除对话</button>
+                <button class="btn btn-sm" onclick="deleteConversation('${escapeHtml(sessionId)}')">${ICONS.trash(13)} 删除对话</button>
             </div>`;
         }
         
@@ -1154,17 +1547,17 @@ function renderThreadList(threads) {
                     ${isActive ? '<span style="background: var(--primary); color: white; font-size: 11px; padding: 2px 8px; border-radius: 10px;">活跃</span>' : ''}
                 </div>
                 <div style="display: flex; gap: 6px;">
-                    <button class="btn btn-sm" onclick="renameThread('${t.session_id}')">✏️ 改名</button>
-                    <button class="btn btn-sm" onclick="openSummaryModal('${t.session_id}')">📝 摘要</button>
+                    <button class="btn btn-sm" onclick="renameThread('${t.session_id}')">改名</button>
+                    <button class="btn btn-sm" onclick="openSummaryModal('${t.session_id}')">摘要</button>
                     ${!isActive ? `<button class="btn btn-sm btn-primary" onclick="switchThread('${t.session_id}')">切换到此</button>` : ''}
                 </div>
             </div>
             <div style="color: var(--text-muted); font-size: 13px; line-height: 1.5;">
                 <div>${summaryPreview}</div>
                 <div style="margin-top: 6px; display: flex; gap: 16px;">
-                    <span>💬 ${t.message_count} 条消息</span>
-                    <span>🪙 ${tokens}</span>
-                    <span>📝 摘要 ${t.summary_length} 字</span>
+                    <span>${t.message_count} 条消息</span>
+                    <span>${tokens}</span>
+                    <span>摘要 ${t.summary_length} 字</span>
                     ${updatedStr ? `<span>更新于 ${updatedStr}</span>` : ''}
                 </div>
             </div>
@@ -1426,4 +1819,242 @@ function updateBackfillProgress(done, total) {
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
     bar.style.width = pct + '%';
     text.textContent = `${done}/${total} (${pct}%)`;
+}
+
+
+// ============================================
+// 设置面板
+// ============================================
+
+let _settingsLoaded = false;
+let _modelList = [];
+
+// 所有需要读写的字段 key（开源版：EMBEDDING_API_KEY + EMBEDDING_BASE_URL）
+const _SETTINGS_FIELDS = {
+    str: ['API_BASE_URL', 'API_KEY', 'DEFAULT_MODEL', 'MEMORY_MODEL',
+          'CACHE_SUMMARY_MODEL', 'EMBEDDING_API_KEY', 'EMBEDDING_BASE_URL', 'EMBEDDING_MODEL', 'REASONING_EFFORT'],
+    int: ['MAX_MEMORIES_INJECT', 'MEMORY_EXTRACT_INTERVAL', 'CACHE_PARTITION_X', 'EMBEDDING_DIM'],
+    float: ['MIN_SCORE_THRESHOLD'],
+    bool: ['MEMORY_ENABLED', 'CACHE_PARTITION_ENABLED', 'MEMORY_VECTOR_ENABLED', 'FORCE_STREAM'],
+    range: ['MEMORY_HW_KEYWORD', 'MEMORY_HW_SEMANTIC', 'MEMORY_HW_IMPORTANCE',
+            'MEMORY_HW_RECENCY', 'MEMORY_SEMANTIC_THRESHOLD'],
+    text: ['systemPrompt'],
+};
+
+const _MODEL_COMBOS = ['DEFAULT_MODEL', 'MEMORY_MODEL', 'CACHE_SUMMARY_MODEL'];
+
+async function loadSettings() {
+    try {
+        const resp = await fetch('/api/settings');
+        const data = await resp.json();
+        if (data.error) { showSettingsMsg('error', '加载失败: ' + data.error); return; }
+        const s = data.settings;
+
+        // 字符串字段
+        _SETTINGS_FIELDS.str.forEach(k => {
+            const el = document.getElementById('set-' + k);
+            if (el) el.value = s[k] || '';
+        });
+        // 打码字段提示
+        ['API_KEY', 'EMBEDDING_API_KEY'].forEach(k => {
+            const hint = document.getElementById('set-' + k + '-hint');
+            if (hint && s[k]) hint.textContent = '当前: ' + s[k];
+        });
+        // 整数
+        _SETTINGS_FIELDS.int.forEach(k => {
+            const el = document.getElementById('set-' + k);
+            if (el) el.value = s[k];
+        });
+        // 浮点
+        _SETTINGS_FIELDS.float.forEach(k => {
+            const el = document.getElementById('set-' + k);
+            if (el) el.value = s[k];
+        });
+        // 布尔（checkbox）
+        _SETTINGS_FIELDS.bool.forEach(k => {
+            const el = document.getElementById('set-' + k);
+            if (el) el.checked = !!s[k];
+        });
+        // 滑块
+        _SETTINGS_FIELDS.range.forEach(k => {
+            const el = document.getElementById('set-' + k);
+            if (el) { el.value = s[k]; updateSliderVal(k); }
+        });
+        // 长文本
+        const promptEl = document.getElementById('set-systemPrompt');
+        if (promptEl) {
+            promptEl.value = s.systemPrompt || '';
+            updatePromptCount();
+        }
+        // REASONING_EFFORT 下拉
+        const reEl = document.getElementById('set-REASONING_EFFORT');
+        if (reEl) reEl.value = s.REASONING_EFFORT || '';
+
+        // 加载模型列表（首次）
+        if (!_settingsLoaded) loadModelList();
+        _settingsLoaded = true;
+    } catch (e) {
+        showSettingsMsg('error', '加载设置失败: ' + e.message);
+    }
+}
+
+async function saveSettings() {
+    const btn = document.getElementById('save-settings-btn');
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+
+    const payload = {};
+
+    // 字符串
+    _SETTINGS_FIELDS.str.forEach(k => {
+        const el = document.getElementById('set-' + k);
+        if (el) payload[k] = el.value;
+    });
+    // 整数
+    _SETTINGS_FIELDS.int.forEach(k => {
+        const el = document.getElementById('set-' + k);
+        if (el) payload[k] = parseInt(el.value) || 0;
+    });
+    // 浮点
+    _SETTINGS_FIELDS.float.forEach(k => {
+        const el = document.getElementById('set-' + k);
+        if (el) payload[k] = parseFloat(el.value) || 0;
+    });
+    // 布尔
+    _SETTINGS_FIELDS.bool.forEach(k => {
+        const el = document.getElementById('set-' + k);
+        if (el) payload[k] = el.checked;
+    });
+    // 滑块
+    _SETTINGS_FIELDS.range.forEach(k => {
+        const el = document.getElementById('set-' + k);
+        if (el) payload[k] = parseFloat(el.value) || 0;
+    });
+    // 长文本
+    const promptEl = document.getElementById('set-systemPrompt');
+    if (promptEl) payload.systemPrompt = promptEl.value;
+
+    try {
+        const resp = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        if (data.error) {
+            showSettingsMsg('error', '保存失败: ' + data.error);
+        } else {
+            const msg = `已更新 ${data.updated?.length || 0} 项` +
+                        (data.skipped?.length ? `，跳过 ${data.skipped.length} 项（未修改）` : '');
+            showSettingsMsg('success', msg);
+        }
+    } catch (e) {
+        showSettingsMsg('error', '保存失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '保存设置';
+    }
+}
+
+async function loadModelList() {
+    const hint = document.getElementById('model-count-hint');
+    if (hint) hint.textContent = '加载模型列表...';
+    try {
+        const resp = await fetch('/api/models');
+        const data = await resp.json();
+        _modelList = data.models || [];
+
+        _MODEL_COMBOS.forEach(fieldName => {
+            renderComboDropdown(fieldName, _modelList);
+        });
+
+        if (hint) {
+            hint.textContent = _modelList.length > 0
+                ? `共 ${_modelList.length} 个可用模型 (${data.provider || ''})`
+                : '无法获取模型列表，请手动输入';
+        }
+    } catch (e) {
+        if (hint) hint.textContent = '模型列表加载失败';
+    }
+}
+
+function renderComboDropdown(fieldName, models) {
+    const dropdown = document.getElementById('dropdown-' + fieldName);
+    if (!dropdown) return;
+    dropdown.innerHTML = '';
+    models.forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'combo-option';
+        div.textContent = m.name || m.id;
+        div.dataset.value = m.id;
+        div.addEventListener('click', () => {
+            document.getElementById('set-' + fieldName).value = m.id;
+            dropdown.classList.remove('open');
+        });
+        dropdown.appendChild(div);
+    });
+}
+
+function filterCombo(fieldName) {
+    const input = document.getElementById('set-' + fieldName);
+    const dropdown = document.getElementById('dropdown-' + fieldName);
+    if (!input || !dropdown) return;
+    const q = input.value.toLowerCase();
+    let visible = 0;
+    dropdown.querySelectorAll('.combo-option').forEach(opt => {
+        const match = !q || opt.textContent.toLowerCase().includes(q) || (opt.dataset.value || '').toLowerCase().includes(q);
+        opt.style.display = match ? '' : 'none';
+        if (match) visible++;
+    });
+    if (visible > 0 && q) dropdown.classList.add('open');
+}
+
+// 初始化 combo-box 交互
+document.addEventListener('DOMContentLoaded', () => {
+    _MODEL_COMBOS.forEach(fieldName => {
+        const input = document.getElementById('set-' + fieldName);
+        const dropdown = document.getElementById('dropdown-' + fieldName);
+        if (!input || !dropdown) return;
+
+        input.addEventListener('focus', () => { dropdown.classList.add('open'); });
+        input.addEventListener('input', () => { filterCombo(fieldName); });
+    });
+
+    // 点击外部关闭所有 combo
+    document.addEventListener('click', (e) => {
+        _MODEL_COMBOS.forEach(fieldName => {
+            const box = document.getElementById('combo-' + fieldName);
+            const dropdown = document.getElementById('dropdown-' + fieldName);
+            if (box && dropdown && !box.contains(e.target)) {
+                dropdown.classList.remove('open');
+            }
+        });
+    });
+});
+
+function updateSliderVal(key) {
+    const el = document.getElementById('set-' + key);
+    const span = document.getElementById('val-' + key);
+    if (el && span) span.textContent = parseFloat(el.value).toFixed(2);
+}
+
+function updatePromptCount() {
+    const el = document.getElementById('set-systemPrompt');
+    const hint = document.getElementById('prompt-char-count');
+    if (el && hint) hint.textContent = el.value.length + ' 字';
+}
+
+// 绑定 prompt 字数实时更新
+document.addEventListener('DOMContentLoaded', () => {
+    const p = document.getElementById('set-systemPrompt');
+    if (p) p.addEventListener('input', updatePromptCount);
+});
+
+function showSettingsMsg(type, text) {
+    const el = document.getElementById('settings-msg');
+    if (!el) return;
+    el.style.display = 'block';
+    el.className = 'msg-box msg-' + type;
+    el.textContent = text;
+    setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
